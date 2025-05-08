@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Painel WhatsApp</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <header class="mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">Painel de Controle WhatsApp</h1>
+            <p class="text-gray-600">Gerencie suas conexões WhatsApp</p>
+        </header>
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <div class="flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-800">Suas Conexões</h2>
+                <button 
+                    hx-get="/qrcode" 
+                    hx-target="#qrcodeModal" 
+                    hx-swap="innerHTML"
+                    class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-md flex items-center gap-2 transition duration-200">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                        <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
+                    </svg>
+                    Conectar WhatsApp
+                </button>
+            </div>
+        </div>
+        <div id="sessions" class="space-y-4">
+            {{ range .Sessions }}
+                {{ template "session_card.html" . }}
+            {{ end }}
+        </div>
+        <div id="qrcodeModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <!-- Conteúdo do modal será carregado via HTMX -->
+        </div>
+    </div>
+    <script>
+        document.body.addEventListener('htmx:afterSwap', function(evt) {
+            if (evt.detail.target.id === 'qrcodeModal') {
+                document.getElementById('qrcodeModal').classList.remove('hidden');
+            }
+        });
+        function closeModal() {
+            document.getElementById('qrcodeModal').classList.add('hidden');
+        }
+        function checkSessionStatus() {
+            htmx.ajax('GET', '/sessions', {target: '#sessions', swap: 'innerHTML'});
+        }
+        setInterval(checkSessionStatus, 5000);
+    </script>
+</body>
+</html>
