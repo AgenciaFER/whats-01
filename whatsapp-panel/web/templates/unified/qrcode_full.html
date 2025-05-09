@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Conectar WhatsApp</title>
+  <link rel="icon" href="/assets/favicon.ico">
+  <link rel="stylesheet" href="/assets/css/style.css">
+</head>
+<body class="bg-black bg-opacity-75 fixed inset-0 flex items-center justify-center">
+  <div class="relative">
+    <!-- Botão fechar -->
+    <button onclick="window.close()" class="absolute top-0 right-0 m-4 text-white">
+      ✕
+    </button>
+    <!-- QR Code -->
+    {{ template "qrcode.html" . }}
+  </div>
+</body>
+</html>

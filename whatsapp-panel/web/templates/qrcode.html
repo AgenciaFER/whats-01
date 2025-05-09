@@ -23,7 +23,13 @@
                 <div class="animate-pulse">
                     <div id="countdown" class="text-sm font-semibold bg-white px-2 py-1 rounded shadow" 
                         x-data="{ time: 60 }" 
-                        x-init="setInterval(() => { if(time > 0) time--; }, 1000)">
+                        x-init="setInterval(() => { 
+                            if(time > 0) { 
+                                time--; 
+                            } else {
+                                closeModal();
+                            }
+                        }, 1000)">
                         <span x-text="time"></span>s
                     </div>
                 </div>
@@ -53,10 +59,8 @@
             });
     }, 1000);
     
-    // Recarregar QR Code após 60 segundos
+    // Fechar modal após 60 segundos se não houver conexão
     setTimeout(function() {
-        if (document.getElementById('qrcodeModal').classList.contains('hidden') === false) {
-            htmx.ajax('GET', '/qrcode', {target: '#qrcodeModal'});
-        }
+        closeModal();
     }, 60000);
 </script>

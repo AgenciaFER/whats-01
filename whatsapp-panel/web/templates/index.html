@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Painel WhatsApp</title>
+    <link rel="icon" href="/assets/favicon.ico">
     <link rel="stylesheet" href="/assets/css/style.css">
-    <script src="https://cdn.tailwindcss.com"></script>
     <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
 </head>
@@ -15,6 +15,7 @@
             <h1 class="text-3xl font-bold text-gray-800">Painel de Controle WhatsApp</h1>
             <p class="text-gray-600">Gerencie suas conexões WhatsApp</p>
         </header>
+        
         <div class="bg-white rounded-lg shadow-md p-6 mb-6">
             <div class="flex justify-between items-center">
                 <h2 class="text-xl font-semibold text-gray-800">Suas Conexões</h2>
@@ -30,28 +31,18 @@
                 </button>
             </div>
         </div>
+        
         <div id="sessions" class="space-y-4">
             {{ range .Sessions }}
-                {{ template "session_card.html" . }}
+                {{template "session_card.html" .}}
             {{ end }}
         </div>
+        
         <div id="qrcodeModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
             <!-- Conteúdo do modal será carregado via HTMX -->
         </div>
     </div>
-    <script>
-        document.body.addEventListener('htmx:afterSwap', function(evt) {
-            if (evt.detail.target.id === 'qrcodeModal') {
-                document.getElementById('qrcodeModal').classList.remove('hidden');
-            }
-        });
-        function closeModal() {
-            document.getElementById('qrcodeModal').classList.add('hidden');
-        }
-        function checkSessionStatus() {
-            htmx.ajax('GET', '/sessions', {target: '#sessions', swap: 'innerHTML'});
-        }
-        setInterval(checkSessionStatus, 5000);
-    </script>
+
+    <script src="/assets/js/app.js"></script>
 </body>
 </html>

@@ -10,9 +10,10 @@ import (
 	"github.com/google/uuid"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
-	"github.com/afv/whatsapp-panel/internal/storage"
+	"whatsapp-panel/internal/storage"
 )
 
 type Client struct {
@@ -48,6 +49,8 @@ func (m *Manager) NewClient() (*Client, error) {
 	}
 
 	device := store.NewDevice()
+	// Definir nome do dispositivo para ser exibido no WhatsApp (push name)
+	device.PushName = "Agência Fer"
 
 	waClient := whatsmeow.NewClient(device, waLog.Stdout("whatsmeow", "INFO", true))
 
@@ -58,6 +61,17 @@ func (m *Manager) NewClient() (*Client, error) {
 		DB:        m.DB,
 		Connected: false,
 	}
+
+	// Registrar handler de eventos para debug e status de conexão
+	waClient.AddEventHandler(func(evt interface{}) {
+		fmt.Printf("[DEBUG EVENT] %T: %+v\n", evt, evt)
+		switch evt.(type) {
+		case *events.PairSuccess, *events.Connected:
+			client.Connected = true
+		case *events.Disconnected:
+			client.Connected = false
+		}
+	})
 
 	m.Mutex.Lock()
 	m.Clients[clientID] = client
@@ -87,7 +101,6 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("erro ao conectar: %v", err)
 	}
 
-	c.Connected = true
 	return nil
 }
 
@@ -101,17 +114,25 @@ func (c *Client) Disconnect() {
 
 // Implementar o método GetQRChannel para o cliente WhatsApp
 func (c *Client) GetQRChannel(ctx context.Context) (<-chan string, error) {
+	// Obter canal de QR Code da biblioteca
 	qrChan, err := c.WAClient.GetQRChannel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao obter canal de QR Code: %v", err)
 	}
 
-	convertedChan := make(chan string)
+	// Forçar conexão para gerar o QR Code
+	if err := c.Connect(); err != nil {
+		return nil, fmt.Errorf("erro ao conectar para gerar QR Code: %v", err)
+	}
+
+	// Canal para retorno dos códigos convertidos
+	converted := make(chan string)
 	go func() {
+		defer close(converted)
 		for item := range qrChan {
-			convertedChan <- item.Code
+			converted <- item.Code
 		}
-		close(convertedChan)
 	}()
-	return convertedChan, nil
+
+	return converted, nil
 }

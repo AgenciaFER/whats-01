@@ -3,7 +3,8 @@ package whatsapp
 import (
 	"fmt"
 
-	"github.com/afv/whatsapp-panel/internal/storage"
+	"whatsapp-panel/internal/storage"
+
 	"go.mau.fi/whatsmeow/types/events"
 )
 

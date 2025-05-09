@@ -3,15 +3,14 @@ package main
 import (
 	"fmt"
 	"log"
-	"net/http"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 
-	"github.com/afv/whatsapp-panel/internal/config"
-	"github.com/afv/whatsapp-panel/internal/handlers"
-	"github.com/afv/whatsapp-panel/internal/services/whatsapp"
-	"github.com/afv/whatsapp-panel/internal/storage"
+	"whatsapp-panel/internal/config"
+	"whatsapp-panel/internal/handlers"
+	"whatsapp-panel/internal/services/whatsapp"
+	"whatsapp-panel/internal/storage"
 )
 
 func main() {
@@ -41,33 +40,24 @@ func main() {
 	// Configurar modo de depuração do Gin
 	gin.SetMode(gin.DebugMode)
 
-	// Configurar carregamento de templates
-	router.LoadHTMLFiles(
-		"web/templates/index.html",
-		"web/templates/qrcode.html",
-		"web/templates/sessions.html",
-		"web/templates/session_card.html",
-		"web/templates/test.html",
-	)
-
 	// Configurar CORS
 	router.Use(cors.Default())
 
-	// Configurar arquivos estáticos
-	router.Static("/assets", "web/assets")
+	// Configurar carregamento de templates - CORREÇÃO DEFINITIVA
+	// Carregar templates da pasta unified para evitar conflitos
+	router.LoadHTMLGlob("web/templates/unified/*.html")
 
-	// Configurar rotas
+	// Servir arquivos estáticos
+	router.Static("/assets", "./web/assets")
+
+	// Definir rotas
 	router.GET("/", whatsappHandler.Index)
 	router.GET("/sessions", sessionHandler.GetSessions)
+	// Rota para gerar modal de QR code para conexão
 	router.GET("/qrcode", sessionHandler.GenerateQRCode)
+	router.GET("/qrcode/raw", sessionHandler.GenerateQRCodeRaw)
+	router.GET("/connection-status", sessionHandler.CheckConnection)
 	router.DELETE("/sessions/:id", sessionHandler.DeleteSession)
-
-	// Adicionar rota de teste para verificar o carregamento de templates
-	router.GET("/test", func(c *gin.Context) {
-		log.Println("Acessando rota /test")
-		c.HTML(http.StatusOK, "test.html", nil)
-		log.Println("Template renderizado com sucesso")
-	})
 
 	// Iniciar servidor
 	addr := fmt.Sprintf(":%s", cfg.Port)

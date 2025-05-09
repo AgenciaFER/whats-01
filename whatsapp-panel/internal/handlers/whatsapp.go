@@ -6,8 +6,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
-	"github.com/afv/whatsapp-panel/internal/services/whatsapp"
-	"github.com/afv/whatsapp-panel/internal/storage"
+	"whatsapp-panel/internal/services/whatsapp"
+	"whatsapp-panel/internal/storage"
 )
 
 type WhatsAppHandler struct {
@@ -25,14 +25,15 @@ func NewWhatsAppHandler(manager *whatsapp.Manager, db *storage.Database) *WhatsA
 func (h *WhatsAppHandler) Index(c *gin.Context) {
 	sessions, err := h.DB.GetAllSessions()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao carregar sessões"})
+		log.Printf("Erro ao carregar sessões: %v", err)
+		c.HTML(http.StatusOK, "error.html", gin.H{
+			"Error": "Erro ao carregar sessões. Por favor, tente novamente.",
+		})
 		return
 	}
 
-	// Adicionar log para verificar as sessões retornadas
-	log.Printf("Sessões retornadas: %+v", sessions)
-
 	c.HTML(http.StatusOK, "index.html", gin.H{
 		"Sessions": sessions,
+		"Title":    "Painel Principal",
 	})
 }
