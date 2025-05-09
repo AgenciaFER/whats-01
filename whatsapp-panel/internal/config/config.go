@@ -12,6 +12,7 @@ type Config struct {
 	Port         string
 	DatabasePath string
 	StoreDir     string
+	Debug        bool
 }
 
 // LoadConfig carrega as configurações do ambiente
@@ -48,9 +49,13 @@ func LoadConfig() (*Config, error) {
 		port = "8080"
 	}
 
+	// Verificar modo debug
+	debug := os.Getenv("DEBUG") == "true"
+
 	return &Config{
 		Port:         port,
 		DatabasePath: dbPath,
 		StoreDir:     storeDir,
+		Debug:        debug,
 	}, nil
 }

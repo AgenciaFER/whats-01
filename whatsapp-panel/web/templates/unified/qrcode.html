@@ -1,31 +1,44 @@
-<div data-session-id="{{ .SessionID }}" class="bg-white rounded-lg p-6 max-w-md w-full relative">
-    <button onclick="closeModal()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 transition duration-200">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-        </svg>
-    </button>
+<div class="fixed inset-0 flex items-center justify-center z-[9999]" id="qrcodeModalBackdrop">
+    <div class="fixed inset-0 bg-black opacity-50"></div>
+    <div data-session-id="{{ .SessionID }}" class="relative z-[10000] bg-white rounded-lg shadow-xl p-8 max-w-lg w-full mx-4">
+        <button onclick="closeModal()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 transition duration-200">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+            </svg>
+        </button>
     
-    <div class="text-center mb-6">
-        <h2 class="text-xl font-bold text-gray-800 mb-2">Conecte seu WhatsApp</h2>
-        <p class="text-sm text-gray-600">Escaneie o código QR com seu WhatsApp</p>
-    </div>
-    
-    <div class="flex justify-center mb-6">
-        <img src="data:image/png;base64,{{ .QRCode }}" alt="QR Code" class="h-64 w-64 rounded-lg shadow-md">
-    </div>
-    <div class="flex justify-center mb-6">
-        <div class="animate-pulse">
-            <div id="countdown" class="text-sm font-semibold bg-white px-2 py-1 rounded shadow" 
-                 x-data="{ time: 60 }" 
-                 x-init="setInterval(() => { if(time > 0) time--; else closeModal(); }, 1000)">
-                <span x-text="time"></span>s
+        <div class="text-center mb-6">
+            <h2 class="text-xl font-bold text-gray-800 mb-2">Conecte seu WhatsApp</h2>
+            <p class="text-sm text-gray-600">Escaneie o código QR com seu WhatsApp</p>
+        </div>
+        
+        <div class="flex justify-center mb-6">
+            <img src="data:image/png;base64,{{ .QRCode }}" alt="QR Code" class="h-64 w-64 rounded-lg shadow-md">
+        </div>
+        
+        <div class="flex justify-center mb-6">
+            <div id="countdown" class="text-sm font-semibold bg-gray-100 px-2 py-1 rounded shadow">
+                <div class="loading-spinner"></div>
+                <span>Aguardando conexão...</span>
             </div>
         </div>
-    </div>
-    
-    <div class="text-center space-y-2">
-        <p class="text-sm text-gray-600">1. Abra o WhatsApp no seu celular</p>
-        <p class="text-sm text-gray-600">2. Toque em Menu ou Configurações e selecione WhatsApp Web</p>
-        <p class="text-sm text-gray-600">3. Aponte a câmera para o código QR</p>
+        
+        <div class="text-center space-y-2">
+            <p class="text-sm text-gray-600">1. Abra o WhatsApp no seu celular</p>
+            <p class="text-sm text-gray-600">2. Toque em Menu ou Configurações e selecione WhatsApp Web</p>
+            <p class="text-sm text-gray-600">3. Aponte a câmera para o código QR</p>
+        </div>
     </div>
 </div>
+
+<script>
+    document.body.style.overflow = 'hidden';
+    const sessionId = '{{ .SessionID }}';
+    initializeConnection(sessionId);
+    
+    document.getElementById('qrcodeModalBackdrop').addEventListener('click', function(event) {
+        if (event.target === this) {
+            closeModal();
+        }
+    });
+</script>

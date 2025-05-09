@@ -1,3 +1,4 @@
+{{/* HTMX partial for sessions */}}
 {{ range .Sessions }}
-    {{template "session_card.html" .}}
+    {{ template "session_card.html" . }}
 {{ end }}

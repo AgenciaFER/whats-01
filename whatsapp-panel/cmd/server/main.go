@@ -2,9 +2,13 @@ package main
 
 import (
 	"fmt"
+	"html/template"
 	"log"
+	"time"
 
 	"github.com/gin-contrib/cors"
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
 	"whatsapp-panel/internal/config"
@@ -12,6 +16,15 @@ import (
 	"whatsapp-panel/internal/services/whatsapp"
 	"whatsapp-panel/internal/storage"
 )
+
+// Função auxiliar para criar mapas no template
+func dict(values ...interface{}) map[string]interface{} {
+	m := make(map[string]interface{})
+	for i := 0; i < len(values); i += 2 {
+		m[values[i].(string)] = values[i+1]
+	}
+	return m
+}
 
 func main() {
 	// Carregar configurações
@@ -31,33 +44,78 @@ func main() {
 	waManager := whatsapp.NewManager(db)
 
 	// Inicializar handlers
+	authHandler := handlers.NewAuthHandler()
 	sessionHandler := handlers.NewSessionHandler(waManager, db)
 	whatsappHandler := handlers.NewWhatsAppHandler(waManager, db)
 
 	// Configurar servidor Gin
+	if cfg.Debug {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
 	router := gin.Default()
 
-	// Configurar modo de depuração do Gin
-	gin.SetMode(gin.DebugMode)
+	// Configurar funções auxiliares para templates
+	router.SetFuncMap(template.FuncMap{
+		"dict": dict,
+	})
 
 	// Configurar CORS
-	router.Use(cors.Default())
+	router.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"*"},
+		AllowMethods:     []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Accept", "Authorization"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
+
+	// Configurar sessões
+	store := cookie.NewStore([]byte("secret"))
+	router.Use(sessions.Sessions("whatsapp-session", store))
 
 	// Configurar carregamento de templates - CORREÇÃO DEFINITIVA
-	// Carregar templates da pasta unified para evitar conflitos
 	router.LoadHTMLGlob("web/templates/unified/*.html")
 
 	// Servir arquivos estáticos
 	router.Static("/assets", "./web/assets")
 
-	// Definir rotas
-	router.GET("/", whatsappHandler.Index)
-	router.GET("/sessions", sessionHandler.GetSessions)
-	// Rota para gerar modal de QR code para conexão
-	router.GET("/qrcode", sessionHandler.GenerateQRCode)
-	router.GET("/qrcode/raw", sessionHandler.GenerateQRCodeRaw)
+	// Grupo de rotas principais
+	mainRoutes := router.Group("/")
+	mainRoutes.Use(authHandler.AuthMiddleware())
+	{
+		mainRoutes.GET("/", whatsappHandler.Index)
+		mainRoutes.GET("/stats", whatsappHandler.GetStats)
+	}
+
+	// Grupo de rotas para sessões
+	sessionRoutes := router.Group("/sessions")
+	sessionRoutes.Use(authHandler.AuthMiddleware())
+	{
+		sessionRoutes.GET("/", sessionHandler.GetSessionsHTML)
+		sessionRoutes.GET("/list", sessionHandler.GetSessions)
+		sessionRoutes.GET("/:id", sessionHandler.GetSessionInfo)
+		sessionRoutes.DELETE("/:id", sessionHandler.DeleteSession)
+		sessionRoutes.POST("/:id/disconnect", whatsappHandler.DisconnectSession)
+		// Adicionar rotas para envio de mensagens
+		sessionRoutes.GET("/:id/message", whatsappHandler.GetMessageForm)
+		sessionRoutes.POST("/:id/message", whatsappHandler.SendMessage)
+	}
+
+	// Grupo de rotas para QR Code
+	qrRoutes := router.Group("/qrcode")
+	qrRoutes.Use(authHandler.AuthMiddleware())
+	{
+		qrRoutes.GET("/", sessionHandler.GenerateQRCode)
+		qrRoutes.GET("/raw", sessionHandler.GenerateQRCodeRaw)
+	}
+
+	// Rotas de status
 	router.GET("/connection-status", sessionHandler.CheckConnection)
-	router.DELETE("/sessions/:id", sessionHandler.DeleteSession)
+	router.GET("/health", func(c *gin.Context) {
+		c.JSON(200, gin.H{"status": "ok"})
+	})
 
 	// Iniciar servidor
 	addr := fmt.Sprintf(":%s", cfg.Port)

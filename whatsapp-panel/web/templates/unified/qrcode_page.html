@@ -8,13 +8,10 @@
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center">
-    <div class="w-full max-w-md p-4">
-        <div id="qrcodeContent" hx-get="/qrcode/raw" hx-trigger="load" hx-target="#qrcodeContent" hx-swap="innerHTML">
-            <p class="text-center text-gray-600">Carregando QR Code...</p>
-        </div>
-        <div class="mt-4 text-center">
-            <a href="/" class="text-blue-500 hover:underline">Voltar ao painel</a>
-        </div>
+    {{ template "header" dict "Title" "QR Code" }}
+    <div class="bg-white rounded-lg shadow-md p-6 mx-auto mt-20 max-w-md">
+        {{ template "qrcode.html" . }}
     </div>
+    {{ template "footer" }}
 </body>
 </html>

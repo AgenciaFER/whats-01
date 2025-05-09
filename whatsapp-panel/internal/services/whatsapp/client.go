@@ -9,9 +9,12 @@ import (
 
 	"github.com/google/uuid"
 	"go.mau.fi/whatsmeow"
+	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
+	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
+	"google.golang.org/protobuf/proto"
 
 	"whatsapp-panel/internal/storage"
 )
@@ -40,44 +43,52 @@ func NewManager(db *storage.Database) *Manager {
 
 func (m *Manager) NewClient() (*Client, error) {
 	clientID := uuid.New().String()
-	storeDir := filepath.Join(os.TempDir(), "whatsapp-store")
-	os.MkdirAll(storeDir, 0755)
+	storeDir := "storage/sessions"
+	if err := os.MkdirAll(storeDir, 0755); err != nil {
+		return nil, fmt.Errorf("erro ao criar diretório de sessões: %v", err)
+	}
 
-	store, err := sqlstore.New("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on", filepath.Join(storeDir, clientID+".db")), waLog.Stdout("whatsmeow", "INFO", true))
+	dbPath := filepath.Join(storeDir, clientID+".db")
+	logger := waLog.Stdout("whatsmeow", "DEBUG", true)
+
+	// Criar store com timeout mais longo
+	store, err := sqlstore.New("sqlite3", fmt.Sprintf("file:%s?_foreign_keys=on&_busy_timeout=5000", dbPath), logger)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao criar store: %v", err)
 	}
 
 	device := store.NewDevice()
-	// Definir nome do dispositivo para ser exibido no WhatsApp (push name)
-	device.PushName = "Agência Fer"
+	client := whatsmeow.NewClient(device, logger)
 
-	waClient := whatsmeow.NewClient(device, waLog.Stdout("whatsmeow", "INFO", true))
-
-	client := &Client{
-		WAClient:  waClient,
+	waCli := &Client{
+		WAClient:  client,
 		ID:        clientID,
 		Store:     store,
 		DB:        m.DB,
 		Connected: false,
 	}
 
-	// Registrar handler de eventos para debug e status de conexão
-	waClient.AddEventHandler(func(evt interface{}) {
-		fmt.Printf("[DEBUG EVENT] %T: %+v\n", evt, evt)
+	// Configurar handlers de eventos
+	client.AddEventHandler(func(evt interface{}) {
 		switch evt.(type) {
-		case *events.PairSuccess, *events.Connected:
-			client.Connected = true
+		case *events.Connected:
+			logger.Infof("Cliente %s conectado com sucesso", clientID)
+			waCli.setConnected(true)
 		case *events.Disconnected:
-			client.Connected = false
+			logger.Warnf("Cliente %s desconectado", clientID)
+			waCli.setConnected(false)
+		case *events.LoggedOut:
+			logger.Warnf("Cliente %s deslogado", clientID)
+			waCli.setConnected(false)
+			go m.RemoveClient(clientID)
 		}
 	})
 
 	m.Mutex.Lock()
-	m.Clients[clientID] = client
+	m.Clients[clientID] = waCli
 	m.Mutex.Unlock()
 
-	return client, nil
+	return waCli, nil
 }
 
 // Adicionar o método RemoveClient para gerenciar a remoção de clientes
@@ -112,27 +123,61 @@ func (c *Client) Disconnect() {
 	}
 }
 
+func (c *Client) setConnected(status bool) {
+	c.Mutex.Lock()
+	defer c.Mutex.Unlock()
+	c.Connected = status
+}
+
 // Implementar o método GetQRChannel para o cliente WhatsApp
 func (c *Client) GetQRChannel(ctx context.Context) (<-chan string, error) {
-	// Obter canal de QR Code da biblioteca
-	qrChan, err := c.WAClient.GetQRChannel(ctx)
+	if c.WAClient == nil {
+		return nil, fmt.Errorf("cliente WhatsApp não inicializado")
+	}
+
+	qrChan := make(chan string)
+	qrChanRaw, err := c.WAClient.GetQRChannel(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("erro ao obter canal de QR Code: %v", err)
+		return nil, fmt.Errorf("erro ao obter canal QR: %v", err)
 	}
 
-	// Forçar conexão para gerar o QR Code
-	if err := c.Connect(); err != nil {
-		return nil, fmt.Errorf("erro ao conectar para gerar QR Code: %v", err)
-	}
-
-	// Canal para retorno dos códigos convertidos
-	converted := make(chan string)
+	// Processar QR codes em uma goroutine
 	go func() {
-		defer close(converted)
-		for item := range qrChan {
-			converted <- item.Code
+		defer close(qrChan)
+		for evt := range qrChanRaw {
+			if evt.Event == "code" {
+				select {
+				case qrChan <- evt.Code:
+				case <-ctx.Done():
+					return
+				}
+			}
 		}
 	}()
 
-	return converted, nil
+	return qrChan, nil
+}
+
+// SendTextMessage envia uma mensagem de texto para um número de telefone
+func (c *Client) SendTextMessage(phoneNumber, message string) error {
+	if !c.Connected {
+		return fmt.Errorf("cliente não está conectado")
+	}
+
+	// Converter número de telefone para formato JID (ID do WhatsApp)
+	recipient, err := types.ParseJID(phoneNumber + "@s.whatsapp.net")
+	if err != nil {
+		return fmt.Errorf("número de telefone inválido: %v", err)
+	}
+
+	// Enviar mensagem
+	_, err = c.WAClient.SendMessage(context.Background(), recipient, &waProto.Message{
+		Conversation: proto.String(message),
+	})
+
+	if err != nil {
+		return fmt.Errorf("erro ao enviar mensagem: %v", err)
+	}
+
+	return nil
 }
