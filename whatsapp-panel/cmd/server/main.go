@@ -75,14 +75,8 @@ func main() {
 	store := cookie.NewStore([]byte("secret"))
 	router.Use(sessions.Sessions("whatsapp-session", store))
 
-	// Configurar carregamento de templates
-	router.LoadHTMLFiles(
-		"web/templates/unified/index.html",
-		"web/templates/unified/qrcode.html",
-		"web/templates/unified/session_card.html",
-		"web/templates/unified/sessions.html",
-		"web/templates/unified/message_form.html",
-	)
+	// Configurar carregamento de templates - CORREÇÃO DEFINITIVA
+	router.LoadHTMLGlob("web/templates/unified/*.html")
 
 	// Servir arquivos estáticos
 	router.Static("/assets", "./web/assets")
@@ -110,15 +104,29 @@ func main() {
 	}
 
 	// Grupo de rotas para QR Code
+	// Grupo de rotas para QR Code
 	qrRoutes := router.Group("/qrcode")
 	qrRoutes.Use(authHandler.AuthMiddleware())
 	{
 		qrRoutes.GET("/", sessionHandler.GenerateQRCode)
-		qrRoutes.GET("/raw", sessionHandler.GenerateQRCodeRaw)
+		qrRoutes.GET("/raw", func(c *gin.Context) {
+			// Adicionar cabeçalhos para prevenir caching
+			c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+			c.Header("Pragma", "no-cache")
+			c.Header("Expires", "0")
+			sessionHandler.GenerateQRCodeRaw(c)
+		})
 	}
 
 	// Rotas de status
-	router.GET("/connection-status", sessionHandler.CheckConnection)
+	router.GET("/connection-status", func(c *gin.Context) {
+		// Adicionar cabeçalhos para prevenir caching
+		c.Header("Cache-Control", "no-store, no-cache, must-revalidate")
+		c.Header("Pragma", "no-cache")
+		c.Header("Expires", "0")
+		sessionHandler.CheckConnection(c)
+	})
+
 	router.GET("/health", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
 	})

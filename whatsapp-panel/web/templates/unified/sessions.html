@@ -1,4 +1,9 @@
 {{/* HTMX partial for sessions */}}
 {{ range .Sessions }}
     {{ template "session_card.html" . }}
+{{ else }}
+    <div class="card bg-gray-50 text-center py-8 text-gray-600">
+        <p>Nenhuma sessão encontrada</p>
+        <p class="text-sm mt-2">Clique em "Conectar WhatsApp" para adicionar uma nova sessão</p>
+    </div>
 {{ end }}

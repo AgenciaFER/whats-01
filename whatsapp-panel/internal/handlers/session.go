@@ -39,7 +39,7 @@ func (h *SessionHandler) GetSessions(c *gin.Context) {
 func (h *SessionHandler) GetSessionsHTML(c *gin.Context) {
 	sessions, err := h.DB.GetAllSessions()
 	if err != nil {
-		c.HTML(http.StatusInternalServerError, "error", gin.H{
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"Error": "Erro ao buscar sessões: " + err.Error(),
 		})
 		return
@@ -47,7 +47,7 @@ func (h *SessionHandler) GetSessionsHTML(c *gin.Context) {
 
 	// Atualizar informações de conexão
 	for i := range sessions {
-		sessionID, ok := sessions[i]["ID"].(string)
+		sessionID, ok := sessions[i]["id"].(string)
 		if !ok {
 			continue // se não conseguir converter o ID, pula para a próxima sessão
 		}
@@ -58,16 +58,16 @@ func (h *SessionHandler) GetSessionsHTML(c *gin.Context) {
 
 		if exists {
 			if client.Connected {
-				sessions[i]["Status"] = "connected"
+				sessions[i]["status"] = "connected"
 			} else {
-				sessions[i]["Status"] = "disconnected"
+				sessions[i]["status"] = "disconnected"
 			}
 		} else {
-			sessions[i]["Status"] = "disconnected"
+			sessions[i]["status"] = "disconnected"
 		}
 	}
 
-	c.HTML(http.StatusOK, "sessions", gin.H{
+	c.HTML(http.StatusOK, "sessions.html", gin.H{
 		"Sessions": sessions,
 		"Title":    "Sessões WhatsApp",
 	})
@@ -78,65 +78,66 @@ func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 	client, err := h.WAClientManager.NewClient()
 	if err != nil {
 		log.Printf("[ERROR] Erro ao criar cliente: %v", err)
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{ // nome de template com extensão
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{
 			"Error": "Erro ao criar cliente: " + err.Error(),
 		})
 		return
 	}
 
+	// Configurar contexto e obter canal de QR raw
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Iniciar tentativa de conexão em background antes de mostrar o QR
-	go func() {
-		log.Printf("[Connection] Iniciando conexão para sessão %s", client.ID)
-		if err := client.WAClient.Connect(); err != nil {
-			log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
-		}
-	}()
-
-	log.Printf("[QRCode] Aguardando QR code para sessão %s...", client.ID)
-	qrChan, err := client.GetQRChannel(ctx)
+	log.Printf("[QRCode] Solicitando canal de QR para sessão %s...", client.ID)
+	qrChanRaw, err := client.WAClient.GetQRChannel(ctx)
 	if err != nil {
-		log.Printf("[ERROR] Erro ao obter QR code: %v", err)
+		log.Printf("[ERROR] Erro ao obter canal de QR: %v", err)
 		h.WAClientManager.RemoveClient(client.ID)
-		c.HTML(http.StatusInternalServerError, "error.html", gin.H{ // nome de template com extensão
-			"Error": "Erro ao obter QR Code: " + err.Error(),
-		})
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{"Error": "Erro ao obter QR Code: " + err.Error()})
+		return
+	}
+
+	// Iniciar conexão para gerar o QR Code
+	log.Printf("[Connection] Conectando sessão %s para gerar QR code", client.ID)
+	if err := client.WAClient.Connect(); err != nil {
+		log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
+		h.WAClientManager.RemoveClient(client.ID)
+		c.HTML(http.StatusInternalServerError, "error.html", gin.H{"Error": "Erro ao conectar cliente: " + err.Error()})
 		return
 	}
 
 	select {
-	case qrCode := <-qrChan:
-		log.Printf("[QRCode] Recebido QR code para sessão %s", client.ID)
-		qrImage, err := qrcode.Encode(qrCode, qrcode.Medium, 256)
+	case qrItem := <-qrChanRaw:
+		log.Printf("[QRCode] Evento QR recebido: %+v", qrItem)
+		qrImage, err := qrcode.Encode(qrItem.Code, qrcode.Medium, 256)
 		if err != nil {
 			log.Printf("[ERROR] Erro ao gerar QR code: %v", err)
 			h.WAClientManager.RemoveClient(client.ID)
-			c.HTML(http.StatusInternalServerError, "error.html", gin.H{ // nome de template com extensão
-				"Error": "Erro ao gerar QR Code: " + err.Error(),
-			})
+			c.HTML(http.StatusInternalServerError, "error.html", gin.H{"Error": "Erro ao gerar QR Code: " + err.Error()})
 			return
 		}
 
-		c.HTML(http.StatusOK, "qrcode.html", gin.H{ // nome de template com extensão
+		// Gerar imagem QR com tamanho maior para melhor leitura
+		log.Printf("[DEBUG] Enviando resposta com QR Code, session_id: %s", client.ID)
+		c.HTML(http.StatusOK, "qrcode.html", gin.H{
 			"QRCode":    base64.StdEncoding.EncodeToString(qrImage),
 			"SessionID": client.ID,
+			"Title":     "Conectar WhatsApp",
 		})
 
 	case <-ctx.Done():
 		log.Printf("[ERROR] Timeout aguardando QR code para sessão %s", client.ID)
 		h.WAClientManager.RemoveClient(client.ID)
-		c.HTML(http.StatusRequestTimeout, "error.html", gin.H{ // nome de template com extensão
+		c.HTML(http.StatusRequestTimeout, "error.html", gin.H{
 			"Error": "Timeout ao gerar QR Code",
 		})
 	}
-}
-
-// GenerateQRCodeRaw retorna JSON com QR code base64 e SessionID
+} // GenerateQRCodeRaw retorna JSON com QR code base64 e SessionID
 func (h *SessionHandler) GenerateQRCodeRaw(c *gin.Context) {
+	log.Println("[GenerateQRCodeRaw] handler chamado")
 	client, err := h.WAClientManager.NewClient()
 	if err != nil {
+		log.Printf("[ERROR] Erro ao criar cliente: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao criar cliente: " + err.Error()})
 		return
 	}
@@ -144,34 +145,42 @@ func (h *SessionHandler) GenerateQRCodeRaw(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
-	// Iniciar tentativa de conexão em background antes de mostrar o QR
-	go func() {
-		log.Printf("[Connection] Iniciando conexão para sessão %s", client.ID)
-		if err := client.WAClient.Connect(); err != nil {
-			log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
-		}
-	}()
-
-	qrChan, err := client.GetQRChannel(ctx)
+	log.Printf("[QRCode] Solicitando canal de QR para sessão %s...", client.ID)
+	qrChanRaw, err := client.WAClient.GetQRChannel(ctx)
 	if err != nil {
+		log.Printf("[ERROR] Erro ao obter canal de QR: %v", err)
 		h.WAClientManager.RemoveClient(client.ID)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao obter QR Code: " + err.Error()})
 		return
 	}
 
+	// Iniciar conexão para gerar o QR Code
+	log.Printf("[Connection] Conectando sessão %s para gerar QR code", client.ID)
+	if err := client.WAClient.Connect(); err != nil {
+		log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
+		h.WAClientManager.RemoveClient(client.ID)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao conectar cliente: " + err.Error()})
+		return
+	}
+
 	select {
-	case qrCode := <-qrChan:
-		qrImage, err := qrcode.Encode(qrCode, qrcode.Medium, 256)
+	case qrItem := <-qrChanRaw:
+		log.Printf("[QRCode] Recebido QR code para sessão %s: %+v", client.ID, qrItem)
+		qrImage, err := qrcode.Encode(qrItem.Code, qrcode.Medium, 256)
 		if err != nil {
+			log.Printf("[ERROR] Erro ao gerar QR code: %v", err)
 			h.WAClientManager.RemoveClient(client.ID)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao gerar QR Code: " + err.Error()})
 			return
 		}
+
 		c.JSON(http.StatusOK, gin.H{
 			"QRCode":    base64.StdEncoding.EncodeToString(qrImage),
 			"SessionID": client.ID,
 		})
+
 	case <-ctx.Done():
+		log.Printf("[ERROR] Timeout aguardando QR code para sessão %s", client.ID)
 		h.WAClientManager.RemoveClient(client.ID)
 		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timeout ao gerar QR Code"})
 	}
@@ -205,13 +214,14 @@ func (h *SessionHandler) CheckConnection(c *gin.Context) {
 	h.WAClientManager.Mutex.Lock()
 	client, exists := h.WAClientManager.Clients[sessionID]
 	h.WAClientManager.Mutex.Unlock()
-	log.Printf("[CheckConnection] exists=%v", exists)
+
+	log.Printf("[CheckConnection] exists=%v, connected=%v", exists, client != nil && client.Connected)
+
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Sessão não encontrada"})
 		return
 	}
 
-	log.Printf("[CheckConnection] client.Connected=%v", client.Connected)
 	c.JSON(http.StatusOK, gin.H{"connected": client.Connected})
 }
 
@@ -241,7 +251,7 @@ func (h *SessionHandler) GetSessionInfo(c *gin.Context) {
 
 	var sessionInfo map[string]interface{}
 	for _, s := range sessions {
-		if id, ok := s["ID"].(string); ok && id == sessionID {
+		if id, ok := s["id"].(string); ok && id == sessionID {
 			sessionInfo = s
 			break
 		}

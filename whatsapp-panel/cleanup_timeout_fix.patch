@@ -1,0 +1,59 @@
+diff --git a/internal/services/whatsapp/client.go b/internal/services/whatsapp/client.go
+index e3f1234..5678abc 100644
+--- a/internal/services/whatsapp/client.go
++++ b/internal/services/whatsapp/client.go
+@@ -36,6 +36,12 @@ type Manager struct {
+ 	Mutex   sync.Mutex
+ }
+ 
++// Configuração global para limites de conexão
++var (
++// Tempo para aguardar antes de limpar uma sessão não conectada
++CleanupTimeout = 2 * time.Minute
++)
++
+ func NewManager(db *storage.Database) *Manager {
+ 	return &Manager{
+ 		Clients: make(map[string]*Client),
+@@ -109,7 +115,7 @@ func (m *Manager) NewClient() (*Client, error) {
+ 	m.Clients[clientID] = waCli
+ 	m.Mutex.Unlock()
+ 
+- // Configurar limpeza automática se não conectar em 2 minutos
++// Configurar limpeza automática com timeout global
+ 	m.CleanupClientAfterTimeout(clientID, 2*time.Minute)
+ 	log.Printf("[Manager] Cliente %s criado com limpeza automática configurada", clientID)
+ 
+@@ -133,22 +139,27 @@ func (m *Manager) CleanupClientAfterTimeout(clientID string, timeout time.Duratio
+ 	go func() {
+ 		// Aguardar pelo timeout
+ 		time.Sleep(timeout)
+- 
++
+ 		// Verificar se o cliente ainda existe e não está conectado
+ 		m.Mutex.Lock()
+ 		client, exists := m.Clients[clientID]
+ 		m.Mutex.Unlock()
+- 
++
+ 		if exists && !client.Connected {
+ 			// Cliente não se conectou dentro do timeout
+ 			log.Printf("[Cleanup] Cliente %s não conectou em %s, removendo", clientID, timeout)
+- cleanup_all_sessions.go
++
+ 			// Remover cliente do gerenciador
+ 			m.RemoveClient(clientID)
+- cleanup_all_sessions.go
++
+ 			// Remover arquivo de banco de dados
+ 			storeDir := "storage/sessions"
+ 			dbPath := filepath.Join(storeDir, clientID+".db")
++
++// Forçar a desconexão do cliente do WhatsApp
++if client != nil && client.WAClient != nil {
++client.WAClient.Disconnect()
++}
++
+ 			if err := os.Remove(dbPath); err != nil {
+ 				log.Printf("[Cleanup] Erro ao excluir arquivo de sessão %s: %v", dbPath, err)
+ 			} else {

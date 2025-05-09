@@ -1,4 +1,3 @@
-{{ define "index.html" }}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -7,8 +6,48 @@
     <title>Painel WhatsApp</title>
     <link rel="icon" href="/assets/favicon.ico">
     <link rel="stylesheet" href="/assets/css/style.css">
-    <link rel="stylesheet" href="/assets/css/modal.css">
     <script src="https://unpkg.com/htmx.org@1.9.6"></script>
+    <style>
+        /* Estilo específico para o modal */
+        .modal-backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.75);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 2rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            max-width: 90vw;
+            width: 100%;
+            max-width: 500px;
+            position: relative;
+        }
+
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(0, 0, 0, 0.1);
+            border-left-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
     <div class="container mx-auto px-4 py-8">
@@ -20,9 +59,7 @@
         <div class="card mb-6">
             <div class="flex justify-between items-center">
                 <h2 class="text-xl font-semibold text-gray-800">Suas Conexões</h2>
-                <button id="connectBtn" type="button"
-                    class="btn btn-primary inline-flex items-center gap-2"
-                    hx-get="/qrcode/" hx-target="#qrcodeContainer" hx-swap="innerHTML" hx-trigger="click">
+                <button id="connectBtn" type="button" class="btn btn-primary inline-flex items-center gap-2">
                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
                         <path fill-rule="evenodd" d="M10 3a1 1 0 011 1v5h5a1 1 0 110 2h-5v5a1 1 0 11-2 0v-5H4a1 1 0 110-2h5V4a1 1 0 011-1z" clip-rule="evenodd" />
                     </svg>
@@ -31,21 +68,167 @@
             </div>
         </div>
         
-        <!-- Container para o QR code -->
-        <div id="qrcodeContainer"></div>
-        
         <div id="sessions" class="space-y-4">
             {{ range .Sessions }}
                 {{ template "session_card.html" . }}
+            {{ else }}
+                <div class="card bg-gray-50 text-center py-8 text-gray-600">
+                    <p>Nenhuma sessão encontrada</p>
+                    <p class="text-sm mt-2">Clique em "Conectar WhatsApp" para adicionar uma nova sessão</p>
+                </div>
             {{ end }}
-        </div>
-        
-        <div id="sessionsContainer" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-            hx-get="/sessions/" hx-trigger="load, sessionUpdate from:body">
         </div>
     </div>
 
-    <script src="/assets/js/app.js"></script>
+    <!-- Modal do QR Code (inicialmente escondido) -->
+    <div id="qrCodeModal" class="modal-backdrop" style="display: none;">
+        <div class="modal-content">
+            <button id="closeModal" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+            </button>
+            
+            <div class="text-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 mb-2">Conecte seu WhatsApp</h2>
+                <p class="text-sm text-gray-600">Escaneie o código QR com seu WhatsApp</p>
+            </div>
+            
+            <div id="qrCodeContainer" class="flex justify-center mb-6">
+                <div class="flex items-center justify-center h-64 w-64 bg-gray-100 rounded-lg shadow-md">
+                    <div class="loading-spinner"></div>
+                    <span>Carregando QR Code...</span>
+                </div>
+            </div>
+            
+            <div class="flex justify-center mb-6">
+                <div id="countdown" class="text-sm font-semibold bg-gray-100 px-2 py-1 rounded shadow">
+                    <span>Aguardando conexão...</span>
+                </div>
+            </div>
+            
+            <div class="text-center space-y-2">
+                <p class="text-sm text-gray-600">1. Abra o WhatsApp no seu celular</p>
+                <p class="text-sm text-gray-600">2. Toque em Menu ou Configurações e selecione WhatsApp Web</p>
+                <p class="text-sm text-gray-600">3. Aponte a câmera para o código QR</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Elemento para notificações -->
+    <div id="notifications"></div>
+
+    <script>
+        // Função para mostrar notificações
+        function showNotification(message, type = 'info') {
+            const notif = document.createElement('div');
+            notif.className = `fixed top-4 right-4 p-4 rounded-md shadow-lg text-white ${type === 'success' ? 'bg-green-500' : type === 'error' ? 'bg-red-500' : 'bg-blue-500'}`;
+            notif.innerHTML = message;
+            document.getElementById('notifications').appendChild(notif);
+            
+            setTimeout(() => {
+                notif.remove();
+            }, 5000);
+        }
+
+        // Função para obter o QR Code
+        async function getQRCode() {
+            // Mostrar modal
+            const modal = document.getElementById('qrCodeModal');
+            modal.style.display = 'flex';
+            
+            try {
+                const response = await fetch('/qrcode/raw');
+                if (!response.ok) {
+                    throw new Error('Falha ao obter QR Code');
+                }
+                
+                const data = await response.json();
+                
+                // Atualizar o container com o QR Code
+                const container = document.getElementById('qrCodeContainer');
+                container.innerHTML = `<img src="data:image/png;base64,${data.QRCode}" alt="QR Code" class="h-64 w-64 rounded-lg shadow-md">`;
+                
+                // Iniciar verificação de conexão
+                checkConnection(data.SessionID);
+            } catch (error) {
+                showNotification('Erro ao obter QR Code: ' + error.message, 'error');
+                closeModal();
+            }
+        }
+
+        // Função para verificar status de conexão
+        function checkConnection(sessionId) {
+            let attempts = 0;
+            const maxAttempts = 60; // 2 minutos
+            
+            const checkInterval = setInterval(async () => {
+                attempts++;
+                
+                try {
+                    const response = await fetch(`/connection-status?session_id=${sessionId}`);
+                    if (!response.ok) throw new Error('Falha ao verificar conexão');
+                    
+                    const data = await response.json();
+                    
+                    if (data.connected) {
+                        clearInterval(checkInterval);
+                        showNotification('WhatsApp conectado com sucesso!', 'success');
+                        closeModal();
+                        
+                        // Atualizar a lista de sessões
+                        const sessionsContainer = document.getElementById('sessions');
+                        const sessionsResponse = await fetch('/sessions/');
+                        const sessionsHTML = await sessionsResponse.text();
+                        sessionsContainer.innerHTML = sessionsHTML;
+                    }
+                } catch (error) {
+                    console.error('Erro ao verificar conexão:', error);
+                }
+                
+                // Verificar se atingiu o limite de tentativas
+                if (attempts >= maxAttempts) {
+                    clearInterval(checkInterval);
+                    showNotification('Tempo limite de conexão excedido', 'error');
+                    closeModal();
+                }
+            }, 2000);
+            
+            // Salvar o intervalo para poder cancelar depois
+            window.currentCheckInterval = checkInterval;
+        }
+
+        // Função para fechar o modal
+        function closeModal() {
+            const modal = document.getElementById('qrCodeModal');
+            modal.style.display = 'none';
+            
+            // Limpar verificação de conexão
+            if (window.currentCheckInterval) {
+                clearInterval(window.currentCheckInterval);
+                window.currentCheckInterval = null;
+            }
+        }
+
+        // Configurar event listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            // Botão de conectar
+            document.getElementById('connectBtn').addEventListener('click', function() {
+                getQRCode();
+            });
+            
+            // Botão de fechar modal
+            document.getElementById('closeModal').addEventListener('click', function() {
+                closeModal();
+            });
+            
+            // Fechar modal ao clicar fora
+            document.getElementById('qrCodeModal').addEventListener('click', function(event) {
+                if (event.target === this) {
+                    closeModal();
+                }
+            });
+        });
+    </script>
 </body>
 </html>
-{{ end }}

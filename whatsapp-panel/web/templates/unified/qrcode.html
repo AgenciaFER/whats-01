@@ -1,4 +1,4 @@
-<div class="fixed inset-0 flex items-center justify-center z-[9999]" id="qrcodeModalBackdrop">
+<div id="qrcodeModalBackdrop" class="fixed inset-0 flex items-center justify-center z-[9999]">
     <div class="fixed inset-0 bg-black opacity-50"></div>
     <div data-session-id="{{ .SessionID }}" class="relative z-[10000] bg-white rounded-lg shadow-xl p-8 max-w-lg w-full mx-4">
         <button onclick="closeModal()" class="absolute top-3 right-3 text-gray-500 hover:text-gray-700 transition duration-200">
@@ -30,16 +30,3 @@
         </div>
     </div>
 </div>
-
-<script>
-    document.body.style.overflow = 'hidden';
-    const sessionId = '{{ .SessionID }}';
-    console.log("Iniciando conexão para sessão:", sessionId);
-    initializeConnection(sessionId);
-    
-    document.getElementById('qrcodeModalBackdrop').addEventListener('click', function(event) {
-        if (event.target === this) {
-            closeModal();
-        }
-    });
-</script>
