@@ -75,8 +75,8 @@ func main() {
 	store := cookie.NewStore([]byte("secret"))
 	router.Use(sessions.Sessions("whatsapp-session", store))
 
-	// Configurar carregamento de templates - CORREÇÃO DEFINITIVA
-	router.LoadHTMLGlob("web/templates/unified/*.html")
+	// Configurar carregamento de templates
+	router.LoadHTMLGlob("web/templates/**/*.html")
 
 	// Servir arquivos estáticos
 	router.Static("/assets", "./web/assets")

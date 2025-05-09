@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -32,7 +33,7 @@
         
         <div id="sessions" class="space-y-4">
             {{ range .Sessions }}
-                {{ template "session_card.html" . }}
+                {{ template "session_card" . }}
             {{ end }}
         </div>
         
@@ -41,10 +42,12 @@
         </div>
     </div>
 
-    {{ define "session_card.html" }}{{ template "session_card.html" . }}{{ end }}
-    {{ define "qrcode.html" }}{{ template "qrcode.html" . }}{{ end }}
-    {{ define "message_form.html" }}{{ template "message_form.html" . }}{{ end }}
+    <!-- Container para o modal de mensagem -->
+    <div id="messageModal" class="hidden fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <!-- O conteúdo será carregado via HTMX -->
+    </div>
 
     <script src="/assets/js/app.js"></script>
 </body>
 </html>
+```

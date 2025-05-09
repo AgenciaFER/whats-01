@@ -34,6 +34,7 @@
 <script>
     document.body.style.overflow = 'hidden';
     const sessionId = '{{ .SessionID }}';
+    console.log("Iniciando conexão para sessão:", sessionId);
     initializeConnection(sessionId);
     
     document.getElementById('qrcodeModalBackdrop').addEventListener('click', function(event) {

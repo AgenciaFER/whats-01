@@ -3,6 +3,7 @@ package whatsapp
 import (
 	"context"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"sync"
@@ -70,15 +71,27 @@ func (m *Manager) NewClient() (*Client, error) {
 
 	// Configurar handlers de eventos
 	client.AddEventHandler(func(evt interface{}) {
-		switch evt.(type) {
+		switch e := evt.(type) {
 		case *events.Connected:
-			logger.Infof("Cliente %s conectado com sucesso", clientID)
+			log.Printf("[Client] Cliente %s conectado com sucesso", clientID)
 			waCli.setConnected(true)
+			// Salvar informações da sessão quando conectado
+			if err := m.DB.SaveSession(clientID, "WhatsApp", "", ""); err != nil {
+				log.Printf("[Client] Erro ao salvar sessão %s: %v", clientID, err)
+			}
+		case *events.PairSuccess:
+			log.Printf("[Client] Pareamento do cliente %s bem sucedido", clientID)
+			waCli.setConnected(true)
+			// Salvar informações de pareamento quando pareado
+			phoneNumber := e.ID.User
+			if err := m.DB.SaveSession(clientID, "WhatsApp", e.ID.String(), phoneNumber); err != nil {
+				log.Printf("[Client] Erro ao salvar sessão pareada %s: %v", clientID, err)
+			}
 		case *events.Disconnected:
-			logger.Warnf("Cliente %s desconectado", clientID)
+			log.Printf("[Client] Cliente %s desconectado", clientID)
 			waCli.setConnected(false)
 		case *events.LoggedOut:
-			logger.Warnf("Cliente %s deslogado", clientID)
+			log.Printf("[Client] Cliente %s deslogado", clientID)
 			waCli.setConnected(false)
 			go m.RemoveClient(clientID)
 		}
@@ -107,6 +120,7 @@ func (c *Client) Connect() error {
 		return nil
 	}
 
+	log.Printf("[Client] Tentando conectar cliente %s", c.ID)
 	err := c.WAClient.Connect()
 	if err != nil {
 		return fmt.Errorf("erro ao conectar: %v", err)
@@ -117,6 +131,7 @@ func (c *Client) Connect() error {
 
 // Implementar o método Disconnect para o cliente WhatsApp
 func (c *Client) Disconnect() {
+	log.Printf("[Client] Desconectando cliente %s", c.ID)
 	if c.Connected {
 		c.WAClient.Disconnect()
 		c.Connected = false
@@ -126,6 +141,7 @@ func (c *Client) Disconnect() {
 func (c *Client) setConnected(status bool) {
 	c.Mutex.Lock()
 	defer c.Mutex.Unlock()
+	log.Printf("[Client] Mudando status do cliente %s para %v", c.ID, status)
 	c.Connected = status
 }
 
@@ -135,7 +151,7 @@ func (c *Client) GetQRChannel(ctx context.Context) (<-chan string, error) {
 		return nil, fmt.Errorf("cliente WhatsApp não inicializado")
 	}
 
-	qrChan := make(chan string)
+	qrChan := make(chan string, 1)
 	qrChanRaw, err := c.WAClient.GetQRChannel(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("erro ao obter canal QR: %v", err)
@@ -146,6 +162,7 @@ func (c *Client) GetQRChannel(ctx context.Context) (<-chan string, error) {
 		defer close(qrChan)
 		for evt := range qrChanRaw {
 			if evt.Event == "code" {
+				log.Printf("[Client] QR Code recebido para o cliente %s", c.ID)
 				select {
 				case qrChan <- evt.Code:
 				case <-ctx.Done():
@@ -171,6 +188,7 @@ func (c *Client) SendTextMessage(phoneNumber, message string) error {
 	}
 
 	// Enviar mensagem
+	log.Printf("[Client] Enviando mensagem para %s", recipient.String())
 	_, err = c.WAClient.SendMessage(context.Background(), recipient, &waProto.Message{
 		Conversation: proto.String(message),
 	})
