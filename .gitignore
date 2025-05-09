@@ -1,0 +1,20 @@
+# Arquivos de banco de dados
+*.db
+
+# Arquivos gerados
+contatos.csv
+qr.png
+
+# Dependências e builds
+node_modules/
+dist/
+vendor/
+
+# Arquivos de ambiente
+.env
+.env.*
+!.env.example
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
