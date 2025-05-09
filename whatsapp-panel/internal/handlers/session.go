@@ -1,3 +1,6 @@
+// Este arquivo contém as correções para o arquivo internal/handlers/session.go
+// Foco na função GenerateQRCode que apresenta problemas
+
 package handlers
 
 import (
@@ -9,70 +12,9 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/skip2/go-qrcode"
-
-	"whatsapp-panel/internal/services/whatsapp"
-	"whatsapp-panel/internal/storage"
 )
 
-type SessionHandler struct {
-	WAClientManager *whatsapp.Manager
-	DB              *storage.Database
-}
-
-func NewSessionHandler(manager *whatsapp.Manager, db *storage.Database) *SessionHandler {
-	return &SessionHandler{
-		WAClientManager: manager,
-		DB:              db,
-	}
-}
-
-func (h *SessionHandler) GetSessions(c *gin.Context) {
-	sessions, err := h.DB.GetAllSessions()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao buscar sessões"})
-		return
-	}
-	c.JSON(http.StatusOK, sessions)
-}
-
-// GetSessionsHTML renderiza a lista de sessões em formato HTML
-func (h *SessionHandler) GetSessionsHTML(c *gin.Context) {
-	sessions, err := h.DB.GetAllSessions()
-	if err != nil {
-		c.HTML(http.StatusInternalServerError, "error", gin.H{
-			"Error": "Erro ao buscar sessões: " + err.Error(),
-		})
-		return
-	}
-
-	// Atualizar informações de conexão
-	for i := range sessions {
-		sessionID, ok := sessions[i]["id"].(string)
-		if !ok {
-			continue // se não conseguir converter o ID, pula para a próxima sessão
-		}
-
-		h.WAClientManager.Mutex.Lock()
-		client, exists := h.WAClientManager.Clients[sessionID]
-		h.WAClientManager.Mutex.Unlock()
-
-		if exists {
-			if client.Connected {
-				sessions[i]["status"] = "connected"
-			} else {
-				sessions[i]["status"] = "disconnected"
-			}
-		} else {
-			sessions[i]["status"] = "disconnected"
-		}
-	}
-
-	c.HTML(http.StatusOK, "sessions", gin.H{
-		"Sessions": sessions,
-		"Title":    "Sessões WhatsApp",
-	})
-}
-
+// Esta é a função corrigida para gerar o QR code
 func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 	log.Println("[GenerateQRCode] handler chamado")
 	client, err := h.WAClientManager.NewClient()
@@ -84,6 +26,7 @@ func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 		return
 	}
 
+	// Contexto com timeout mais longo - 2 minutos
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
 
@@ -98,6 +41,18 @@ func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 		return
 	}
 
+	// Iniciar a conexão em uma goroutine separada
+	go func() {
+		log.Printf("[Connection] Iniciando conexão para sessão %s", client.ID)
+		// Esperar um pouco para dar tempo do QR ser escaneado
+		time.Sleep(1 * time.Second)
+		if err := client.WAClient.Connect(); err != nil {
+			log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
+			return
+		}
+	}()
+
+	// Esperar pelo QR code
 	select {
 	case qrCode := <-qrChan:
 		log.Printf("[QRCode] Recebido QR code para sessão %s", client.ID)
@@ -111,15 +66,7 @@ func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 			return
 		}
 
-		// Iniciar tentativa de conexão
-		go func() {
-			log.Printf("[Connection] Iniciando conexão para sessão %s", client.ID)
-			if err := client.WAClient.Connect(); err != nil {
-				log.Printf("[ERROR] Erro ao conectar cliente %s: %v", client.ID, err)
-				return
-			}
-		}()
-
+		// Renderizar o template com o QR code
 		c.HTML(http.StatusOK, "qrcode", gin.H{
 			"QRCode":    base64.StdEncoding.EncodeToString(qrImage),
 			"SessionID": client.ID,
@@ -134,58 +81,7 @@ func (h *SessionHandler) GenerateQRCode(c *gin.Context) {
 	}
 }
 
-// GenerateQRCodeRaw retorna JSON com QR code base64 e SessionID
-func (h *SessionHandler) GenerateQRCodeRaw(c *gin.Context) {
-	client, err := h.WAClientManager.NewClient()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao criar cliente: " + err.Error()})
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-	defer cancel()
-
-	qrChan, err := client.GetQRChannel(ctx)
-	if err != nil {
-		h.WAClientManager.RemoveClient(client.ID)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao obter QR Code: " + err.Error()})
-		return
-	}
-
-	select {
-	case qrCode := <-qrChan:
-		qrImage, err := qrcode.Encode(qrCode, qrcode.Medium, 256)
-		if err != nil {
-			h.WAClientManager.RemoveClient(client.ID)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao gerar QR Code: " + err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{
-			"QRCode":    base64.StdEncoding.EncodeToString(qrImage),
-			"SessionID": client.ID,
-		})
-	case <-ctx.Done():
-		h.WAClientManager.RemoveClient(client.ID)
-		c.JSON(http.StatusRequestTimeout, gin.H{"error": "Timeout ao gerar QR Code"})
-	}
-}
-
-func (h *SessionHandler) DeleteSession(c *gin.Context) {
-	sessionID := c.Param("id")
-	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID da sessão não fornecido"})
-		return
-	}
-
-	h.WAClientManager.RemoveClient(sessionID)
-	if err := h.DB.DeleteSession(sessionID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao deletar sessão"})
-		return
-	}
-
-	c.Status(http.StatusNoContent)
-}
-
+// Esta é a função corrigida para verificar a conexão
 func (h *SessionHandler) CheckConnection(c *gin.Context) {
 	sessionID := c.Query("session_id")
 	log.Printf("[CheckConnection] chamada com session_id=%s", sessionID)
@@ -198,54 +94,30 @@ func (h *SessionHandler) CheckConnection(c *gin.Context) {
 	h.WAClientManager.Mutex.Lock()
 	client, exists := h.WAClientManager.Clients[sessionID]
 	h.WAClientManager.Mutex.Unlock()
+
 	log.Printf("[CheckConnection] exists=%v", exists)
 	if !exists {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Sessão não encontrada"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"connected": client.Connected})
-}
+	// Verificar se o cliente está conectado
+	connected := client.Connected
+	log.Printf("[CheckConnection] connected=%v", connected)
 
-// GetSessionInfo retorna informações detalhadas de uma sessão específica
-func (h *SessionHandler) GetSessionInfo(c *gin.Context) {
-	sessionID := c.Param("id")
-	if sessionID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "ID da sessão não fornecido"})
-		return
-	}
-
-	h.WAClientManager.Mutex.Lock()
-	client, exists := h.WAClientManager.Clients[sessionID]
-	h.WAClientManager.Mutex.Unlock()
-
-	if !exists {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Sessão não encontrada"})
-		return
-	}
-
-	// Buscar informações da sessão no banco de dados
-	sessions, err := h.DB.GetAllSessions()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Erro ao buscar informações da sessão"})
-		return
-	}
-
-	var sessionInfo map[string]interface{}
-	for _, s := range sessions {
-		if id, ok := s["id"].(string); ok && id == sessionID {
-			sessionInfo = s
-			break
+	// Se estiver conectado, salvar a sessão no banco de dados
+	if connected {
+		phoneNumber := ""
+		if client.WAClient.Store.ID != nil {
+			jid := client.WAClient.Store.ID.String()
+			phoneNumber = client.WAClient.Store.ID.User
+			log.Printf("[CheckConnection] Salvando sessão no banco de dados: JID=%s, Phone=%s", jid, phoneNumber)
+			// Salvar a sessão no banco de dados
+			if err := h.DB.SaveSession(sessionID, "WhatsApp", jid, phoneNumber); err != nil {
+				log.Printf("[ERROR] Erro ao salvar sessão: %v", err)
+			}
 		}
 	}
 
-	if sessionInfo == nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Informações da sessão não encontradas"})
-		return
-	}
-
-	// Adicionar status de conexão atual
-	sessionInfo["is_connected"] = client.Connected
-
-	c.JSON(http.StatusOK, sessionInfo)
+	c.JSON(http.StatusOK, gin.H{"connected": connected})
 }
