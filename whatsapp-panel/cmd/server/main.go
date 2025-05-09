@@ -76,7 +76,13 @@ func main() {
 	router.Use(sessions.Sessions("whatsapp-session", store))
 
 	// Configurar carregamento de templates
-	router.LoadHTMLGlob("web/templates/**/*.html")
+	router.LoadHTMLFiles(
+		"web/templates/unified/index.html",
+		"web/templates/unified/qrcode.html",
+		"web/templates/unified/session_card.html",
+		"web/templates/unified/sessions.html",
+		"web/templates/unified/message_form.html",
+	)
 
 	// Servir arquivos estáticos
 	router.Static("/assets", "./web/assets")
